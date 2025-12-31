@@ -83,4 +83,25 @@ pm.execute_notebook(
     kernel_name=KERNEL,
 )
 
-print("Đã chạy xong pipeline (classification + regression + ARIMA)")
+# --- CẬP NHẬT: Dự báo với SARIMA (Chủ đề 2) ---
+pm.execute_notebook(
+    "notebooks/arima_forecasting.ipynb",
+    "notebooks/runs/sarima_forecasting_run.ipynb",
+    parameters=dict(
+        RAW_ZIP_PATH="data/raw/PRSA2017_Data_20130301-20170228.zip",
+        STATION="Aotizhongxin",
+        VALUE_COL="PM2.5",
+        CUTOFF="2017-01-01",
+        P_MAX=1,    # Giảm để chạy nhanh
+        D_MAX=1, 
+        Q_MAX=0, 
+        S=24,       # Chu kỳ mùa vụ quan trọng
+        P_S_MAX=0,  # Tạm thời để 0
+        D_S_MAX=1, 
+        Q_S_MAX=0, 
+        IC="aic",
+        ARTIFACTS_PREFIX="sarima_pm25"
+    ),
+    language="python",
+    kernel_name=KERNEL,
+    )

@@ -8,8 +8,7 @@ import numpy as np
 import pandas as pd
 
 from statsmodels.tsa.stattools import adfuller, kpss
-from statsmodels.tsa.arima.model import ARIMA
-
+from statsmodels.tsa.statespace.sarimax import SARIMAX
 # Reuse loading/cleaning helpers
 from .classification_library import (
     Paths,
@@ -27,6 +26,49 @@ class StationSeriesConfig:
     fill_method: str = "interpolate_time"  # interpolate_time | ffill | none
     clip_negative: bool = True
 
+def grid_search_sarima_order(
+    s: pd.Series,
+    p_max: int = 2,
+    d_max: int = 1,
+    q_max: int = 2,
+    P_max: int = 1,
+    D_max: int = 1,
+    Q_max: int = 1,
+    s_period: int = 24, # Chu kỳ mùa vụ theo giờ [cite: 270]
+    ic: str = "aic"
+) -> dict:
+    x = pd.to_numeric(s, errors="coerce").dropna()
+    best_score = np.inf
+    best_order = None
+    best_seasonal_order = None
+
+    # d được chốt từ kiểm định ADF 
+    d = choose_d_by_adf(x, max_d=d_max)
+    D = D_max # Thường đặt D=1 nếu chuỗi có mùa vụ mạnh 
+
+    for p in range(p_max + 1):
+        for q in range(q_max + 1):
+            for P in range(P_max + 1):
+                for Q in range(Q_max + 1):
+                    order = (p, d, q)
+                    seasonal_order = (P, D, Q, s_period)
+                    try:
+                        # Sử dụng SARIMAX thay vì ARIMA 
+                        model = SARIMAX(x, order=order, seasonal_order=seasonal_order,
+                                        enforce_stationarity=False, enforce_invertibility=False)
+                        res = model.fit(disp=False)
+                        score = getattr(res, ic)
+                        if score < best_score:
+                            best_score = score
+                            best_order = order
+                            best_seasonal_order = seasonal_order
+                    except:
+                        continue
+    return {
+        "best_order": best_order, 
+        "best_seasonal_order": best_seasonal_order, 
+        "best_score": best_score
+    }
 
 def make_hourly_station_series(df: pd.DataFrame, cfg: StationSeriesConfig) -> pd.Series:
     """
@@ -190,18 +232,17 @@ def train_test_split_series(s: pd.Series, cutoff: str = "2017-01-01") -> tuple[p
     return train, test
 
 
-def fit_arima_and_forecast(
+def fit_sarima_and_forecast(
     train: pd.Series,
     steps: int,
-    order: tuple[int, int, int],
+    order: tuple,
+    seasonal_order: tuple
 ) -> dict:
-    """
-    Fit ARIMA on train and forecast `steps` ahead.
-    Returns: forecast series, conf_int DataFrame, fitted model result.
-    """
     x = pd.to_numeric(train, errors="coerce").dropna()
-    model = ARIMA(x, order=order, enforce_stationarity=False, enforce_invertibility=False)
-    res = model.fit()
+    # Huấn luyện mô hình SARIMAX với mùa vụ
+    model = SARIMAX(x, order=order, seasonal_order=seasonal_order,
+                    enforce_stationarity=False, enforce_invertibility=False)
+    res = model.fit(disp=False)
 
     fc = res.get_forecast(steps=steps)
     yhat = fc.predicted_mean
